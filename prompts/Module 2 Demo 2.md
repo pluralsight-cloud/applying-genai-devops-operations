@@ -1,4 +1,4 @@
-# Module 1 - Demo 2: Deploy an application using an AI-generated Dockerfile
+# Module 2 - Demo 2: Deploy an application using an AI-generated Dockerfile
 
 Use the prompt below with your GenAI tool, then apply the structured requirements in this doc so the generated **Dockerfile** matches the course expectations for a **Node.js + TypeScript** API.
 

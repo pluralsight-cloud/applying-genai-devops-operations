@@ -76,6 +76,12 @@ Do **not** rely on `bootstrap_cluster_creator_admin_permissions` alone for porta
 - Set `service_account_role_arn` on the `aws_eks_addon` named `aws-ebs-csi-driver` to that role
 - **Never** reuse the payment-api application IRSA role for the EBS CSI add-on (wrong trust and policies → add-on stuck in `CREATING` / timeout)
 
+#### OIDC for IRSA (required pattern)
+
+- EKS exposes an OIDC issuer URL; **IAM OIDC provider is not created automatically** for Terraform IRSA.
+- Use `data "tls_certificate" "eks_oidc"` against the cluster issuer URL and `resource "aws_iam_openid_connect_provider" "eks"` with `client_id_list = ["sts.amazonaws.com"]` and a valid `thumbprint_list`.
+- **Do not** use on
+
 ### 2. Amazon ECR
 
 | Requirement | Detail |

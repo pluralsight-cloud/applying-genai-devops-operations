@@ -1,4 +1,4 @@
-# Module 1 — Demo 3: Production-ready Kubernetes manifests (AI-assisted)
+# Module 2 — Demo 3: Production-ready Kubernetes manifests (AI-assisted)
 
 Use the prompt below with your GenAI tool to generate manifests for a **Node.js payment API** on **AWS EKS** (Kubernetes **1.35**). The demo has **no database**. The API is exposed **only** via a `Service` of type `LoadBalancer` — **no Ingress**.
 
