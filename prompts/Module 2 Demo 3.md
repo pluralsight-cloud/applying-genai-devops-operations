@@ -1,17 +1,15 @@
-# Module 2 — Demo 3: Production-ready Kubernetes manifests (AI-assisted)
+# Module 2 - Demo 2: Deploy an application using an AI-generated Dockerfile
 
-Use the prompt below with your GenAI tool to generate manifests for a **Node.js payment API** on **AWS EKS** (Kubernetes **1.35**). The demo has **no database**. The API is exposed **only** via a `Service` of type `LoadBalancer` — **no Ingress**.
+Use the prompt below with your GenAI tool, then apply the structured requirements in this doc so the generated **Dockerfile** matches the course expectations for a **Node.js + TypeScript** API.
 
 ---
 
 ## AI prompt (copy into your assistant)
 
 ```text
-You are an expert Kubernetes engineer. Generate complete, production-ready Kubernetes
-manifests for a Node.js payment API running on an AWS EKS cluster (Kubernetes 1.35).
-This is a demo application with no database. The API must be publicly accessible
-from the internet using a Kubernetes Service of type LoadBalancer only. Do not
-use any Ingress resources for this demo.
+You are an expert Docker and Node.js engineer. Generate a complete, production-ready
+Dockerfile for a Node.js API written in TypeScript. Follow Docker best practices
+for security, performance, and image size optimization.
 ```
 
 ---
@@ -20,213 +18,94 @@ use any Ingress resources for this demo.
 
 | Item | Value |
 |------|--------|
-| App name | `payment-api` |
-| Container image | `<account-id>.dkr.ecr.<region>.amazonaws.com/payment-api:latest` |
-| Container port | `3000` |
-| Language | Node.js 24 (TypeScript, compiled) |
-| Environment | `prod` |
-| Storage | No database or persistent volumes |
+| Runtime | **Node.js 24** (LTS codename *Krypton* — LTS as of May 2026, supported through April 2028) |
+| Language | **TypeScript** (compile to JavaScript before run) |
+| Package manager | **npm** (adjust if the repo uses Yarn or pnpm) |
+| Source entry | `src/index.ts` |
+| Built entry | `dist/index.js` |
+| Build command | `npm run build` |
+| Start command (local) | `npm start` (image should run Node on `dist/` directly — see Dockerfile requirements) |
+| Default port | **3000** |
 
 ---
 
-## Manifest requirements
+## Dockerfile requirements
 
-### 1. Namespace
+### 1. Multi-stage build
 
-- Create namespace: **`payment-api`**
-- Labels:
-  - `app.kubernetes.io/name: payment-api`
-  - `environment: prod`
+Use **named stages** with this layout:
 
-### 2. Deployment
+| Stage | Name | Base image | Purpose |
+|-------|------|------------|---------|
+| 1 | `deps` | `node:24-alpine` | Install **production** dependencies only (`npm ci --omit=dev`) so dev tooling is not in the final image |
+| 2 | `builder` | `node:24-alpine` | Copy source; install **all** dependencies (including devDependencies for `tsc`); run **`npm run build`** → `src/` → `dist/` |
+| 3 | `runner` (final) | `node:24-alpine` | Copy **`dist/`** from builder; copy **`node_modules/`** from deps; copy **`package.json`**; **do not** ship `src/`, `tsconfig.json`, `*.ts`, devDependencies, or test-only files — only this stage is published |
 
-| Field | Value |
-|-------|--------|
-| Name / namespace | `payment-api` / `payment-api` |
-| Replicas | `2` |
-| Image | `<account-id>.dkr.ecr.<region>.amazonaws.com/payment-api:latest` |
-| `imagePullPolicy` | `Always` |
-| Container port | `3000` |
+### 2. Security best practices
 
-**Labels and selectors (pods and template):**
+| Rule | Detail |
+|------|--------|
+| Non-root | Do **not** run as root |
+| User / group | Dedicated **`appuser`** / **`appgroup`** |
+| Ownership | App directory owned by `appuser` |
+| `USER` | Switch to **`appuser`** before **`CMD`** |
+| Secrets | Do **not** copy `.env` into the image; inject secrets at runtime (env vars, AWS Secrets Manager, etc.) |
 
-- `app: payment-api`
-- `app.kubernetes.io/name: payment-api`
-- `app.kubernetes.io/version: "1.0.0"`
-- `environment: prod`
+### 3. Image optimization
 
-**Environment**
+- Base image for **all** stages: **`node:24-alpine`** (small, maintained base).
+- Use **`npm ci`** instead of `npm install` for reproducible, faster installs.
+- Set **`NODE_ENV=production`** in the final stage.
 
-- `NODE_ENV=production`, `PORT=3000` at runtime
-- Add placeholders for extra config via **ConfigMap** references (`envFrom` or `valueFrom`)
-
-**Resources**
-
-```yaml
-requests:
-  cpu: "100m"
-  memory: "128Mi"
-limits:
-  cpu: "500m"
-  memory: "256Mi"
-```
-
-**Probes**
-
-| Probe | Path | initialDelaySeconds | periodSeconds | timeoutSeconds | failureThreshold |
-|-------|------|---------------------|----------------|----------------|------------------|
-| Liveness | `/health` | 15 | 20 | 5 | 3 |
-| Readiness | `/health` | 5 | 10 | 3 | 3 |
-
-**Security — pod**
-
-- `runAsNonRoot: true`
-- `runAsUser: 1000`
-- `fsGroup: 1000`
-
-**Security — container**
-
-- `allowPrivilegeEscalation: false`
-- `readOnlyRootFilesystem: true`
-- `capabilities.drop: ["ALL"]`
-
-**Other**
-
-- `restartPolicy: Always`
-- **Topology spread:** spread across zones — `topologyKey: topology.kubernetes.io/zone`, `maxSkew: 1`, `whenUnsatisfiable: ScheduleAnyway`
-
-### 3. Service
-
-- **No Ingress** — this is the only external entrypoint.
-- Name: `payment-api`, namespace: `payment-api`
-- Type: **`LoadBalancer`** (not ClusterIP or NodePort alone)
-- Port **80** → `targetPort` **3000**, protocol **TCP**
-- Selector: **`app: payment-api`**
-
-### 4. ConfigMap
-
-- Name: `payment-api-config`, namespace: `payment-api`
-- Data (non-sensitive):
-
-  | Key | Value |
-  |-----|--------|
-  | `NODE_ENV` | `"production"` |
-  | `PORT` | `"3000"` |
-  | `LOG_LEVEL` | `"info"` |
-
-- Reference this ConfigMap in the Deployment **`envFrom`** block.
-
-### 5. HorizontalPodAutoscaler (HPA)
-
-- Name: `payment-api`, namespace: `payment-api`
-- Target: `Deployment/payment-api`
-- Min replicas: **2**, max replicas: **5**
-- Scale when average **CPU** utilization **> 70%**
-- Scale when average **memory** utilization **> 80%**
-- API: **`autoscaling/v2`**
-
-### 6. PodDisruptionBudget (PDB)
-
-- Name: `payment-api`, namespace: `payment-api`
-- `minAvailable: 1` (at least one pod during drains / voluntary disruption)
-
----
-
-## File structure
+**`.dockerignore` should exclude (at minimum):**
 
 ```text
-k8s/
-├── namespace.yaml
-├── configmap.yaml
-├── deployment.yaml
-├── service.yaml
-├── hpa.yaml
-├── pdb.yaml
-└── kustomization.yaml   # references all of the above
+node_modules/
+dist/
+.env
+.env.*
+*.test.ts
+*.spec.ts
+coverage/
+.git/
+.github/
+README.md
+docker-compose*.yml
+```
+
+### 4. Runtime configuration
+
+| Requirement | Detail |
+|-------------|--------|
+| `WORKDIR` | `/app` in **every** stage |
+| Port | **Expose 3000**; support overrides via **`ARG` / `ENV`** at build time |
+| Env defaults (final stage) | `NODE_ENV=production`, `PORT=3000` |
+| `CMD` | **Exec form** only: `CMD ["node", "dist/index.js"]` — **do not** use shell form for the final `CMD` |
+
+### 5. Health check (final stage)
+
+Add a **`HEALTHCHECK`** on the final image:
+
+| Option | Value |
+|--------|--------|
+| Interval | `30s` |
+| Timeout | `5s` |
+| Retries | `3` |
+| Start period | `10s` |
+
+Command (use **`wget`** — Alpine does not ship **`curl`** by default):
+
+```dockerfile
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1
 ```
 
 ---
 
-## Kustomize requirements
+## Quick checklist for reviewers
 
-Create **`kustomization.yaml`** that:
-
-1. Lists every file above under **`resources`**
-2. Sets **`namespace: payment-api`** globally (avoid repeating namespace in each file where appropriate)
-3. Adds common labels on all resources:
-   - `managed-by: kustomize`
-   - `environment: prod`
-
----
-
-## README for `k8s/`
-
-Include **`k8s/README.md`** covering:
-
-### 1. Prerequisites
-
-- `kubectl` configured for **demo-eks-cluster** (or your target context)
-- EKS can provision AWS load balancers for `Service` type `LoadBalancer` (default cloud controller)
-- Image pushed to ECR
-
-### 2. Apply everything
-
-```bash
-kubectl apply -k k8s/
-```
-
-### 3. Apply individual files
-
-```bash
-kubectl apply -f k8s/namespace.yaml
-kubectl apply -f k8s/configmap.yaml
-kubectl apply -f k8s/deployment.yaml
-kubectl apply -f k8s/service.yaml
-kubectl apply -f k8s/hpa.yaml
-kubectl apply -f k8s/pdb.yaml
-```
-
-### 4. Deployment status
-
-```bash
-kubectl rollout status deployment/payment-api -n payment-api
-```
-
-### 5. LoadBalancer hostname (no Ingress)
-
-```bash
-kubectl get svc payment-api -n payment-api
-```
-
-### 6. Pods
-
-```bash
-kubectl get pods -n payment-api
-```
-
-### 7. Logs
-
-```bash
-kubectl logs -l app=payment-api -n payment-api --follow
-```
-
-### 8. Rolling image update
-
-```bash
-kubectl set image deployment/payment-api \
-  payment-api=<account-id>.dkr.ecr.<region>.amazonaws.com/payment-api:<new-tag> \
-  -n payment-api
-```
-
----
-
-## Technical constraints
-
-- Target Kubernetes **1.35**
-- Use **stable** API versions only (no alpha/beta unless unavoidable — document exceptions)
-- Use **`app.kubernetes.io/*`** recommended labels on resources
-- All namespaced resources in **`payment-api`**
-- Do **not** use `hostNetwork`, `hostPID`, or privileged containers
-- Do **not** use Ingress; external traffic only via **`LoadBalancer`** `Service`
-- **Comment** each manifest section so learners know what it does
-- Set **`imagePullPolicy: Always`** so ECR’s latest image is pulled on relevant restarts
+- [ ] Three stages: `deps` → `builder` → `runner`
+- [ ] Final image has no TypeScript sources or devDependencies
+- [ ] Non-root user, exec-form `CMD`, production `NODE_ENV`
+- [ ] `.dockerignore` present and aligned with the list above
+- [ ] `HEALTHCHECK` hits `/health` on the configured port

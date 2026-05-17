@@ -1,111 +1,176 @@
-# Module 2 - Demo 2: Deploy an application using an AI-generated Dockerfile
+# Module 1 — Demo 1: Build and validate EKS infrastructure (AI-generated Terraform)
 
-Use the prompt below with your GenAI tool, then apply the structured requirements in this doc so the generated **Dockerfile** matches the course expectations for a **Node.js + TypeScript** API.
+Use the prompt below with your GenAI tool to produce a **complete, production-style Terraform** layout that provisions the AWS pieces for this course’s **demo environment**.
 
 ---
 
 ## AI prompt (copy into your assistant)
 
 ```text
-You are an expert Docker and Node.js engineer. Generate a complete, production-ready
-Dockerfile for a Node.js API written in TypeScript. Follow Docker best practices
-for security, performance, and image size optimization.
+You are an expert AWS and Terraform engineer. Generate a complete, production-ready
+Terraform configuration to provision the following AWS infrastructure for a demo environment.
 ```
 
 ---
 
-## Application details
+## Requirements
 
-| Item | Value |
-|------|--------|
-| Runtime | **Node.js 24** (LTS codename *Krypton* — LTS as of May 2026, supported through April 2028) |
-| Language | **TypeScript** (compile to JavaScript before run) |
-| Package manager | **npm** (adjust if the repo uses Yarn or pnpm) |
-| Source entry | `src/index.ts` |
-| Built entry | `dist/index.js` |
-| Build command | `npm run build` |
-| Start command (local) | `npm start` (image should run Node on `dist/` directly — see Dockerfile requirements) |
-| Default port | **3000** |
+### 1. AWS EKS cluster
 
----
+| Setting | Value |
+|---------|--------|
+| Cluster name | `demo-eks-cluster` |
+| Kubernetes version | **1.35** (supported on Amazon EKS for this demo) |
 
-## Dockerfile requirements
+**Version note:** Kubernetes **1.36** may be the latest upstream release as of April 2026, but if AWS has not yet published it for EKS, stay on **1.35** until support appears, then bump the Terraform default.
 
-### 1. Multi-stage build
+**Networking (dedicated VPC)**
 
-Use **named stages** with this layout:
+| Component | Count / role |
+|-----------|----------------|
+| Public subnets | 2 |
+| Private subnets | 2 |
+| NAT Gateway | Yes — egress for private subnets |
+| Internet Gateway | Yes — public subnet access |
 
-| Stage | Name | Base image | Purpose |
-|-------|------|------------|---------|
-| 1 | `deps` | `node:24-alpine` | Install **production** dependencies only (`npm ci --omit=dev`) so dev tooling is not in the final image |
-| 2 | `builder` | `node:24-alpine` | Copy source; install **all** dependencies (including devDependencies for `tsc`); run **`npm run build`** → `src/` → `dist/` |
-| 3 | `runner` (final) | `node:24-alpine` | Copy **`dist/`** from builder; copy **`node_modules/`** from deps; copy **`package.json`**; **do not** ship `src/`, `tsconfig.json`, `*.ts`, devDependencies, or test-only files — only this stage is published |
+**Managed node group**
 
-### 2. Security best practices
+| Setting | Value |
+|---------|--------|
+| Instance type | `t3.medium` |
+| Scaling | Desired **2**, min **1**, max **3** |
+| Node OS | **Amazon Linux 2023 (AL2023)** — required for EKS **1.33+** (AL2 AMIs are not released for these versions) |
+| Subnet placement | **Private** subnets only |
+| Public IPs on nodes | **No** |
 
-| Rule | Detail |
-|------|--------|
-| Non-root | Do **not** run as root |
-| User / group | Dedicated **`appuser`** / **`appgroup`** |
-| Ownership | App directory owned by `appuser` |
-| `USER` | Switch to **`appuser`** before **`CMD`** |
-| Secrets | Do **not** copy `.env` into the image; inject secrets at runtime (env vars, AWS Secrets Manager, etc.) |
+**Cluster add-ons (managed)**
 
-### 3. Image optimization
+- `coredns`
+- `kube-proxy`
+- `vpc-cni`
+- `aws-ebs-csi-driver`
 
-- Base image for **all** stages: **`node:24-alpine`** (small, maintained base).
-- Use **`npm ci`** instead of `npm install` for reproducible, faster installs.
-- Set **`NODE_ENV=production`** in the final stage.
+#### EKS access entries (console / API access)
 
-**`.dockerignore` should exclude (at minimum):**
+- Grant **cluster admin** to:
+  - `data.aws_caller_identity.current.arn` (the principal running `terraform apply`), and
+  - every ARN in `var.cluster_admin_principal_arns`
+- Use `aws_eks_access_entry` (type `STANDARD`) and `aws_eks_access_policy_association` with:
+  - Policy: `arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy`
+  - `access_scope { type = "cluster" }`
 
-```text
-node_modules/
-dist/
-.env
-.env.*
-*.test.ts
-*.spec.ts
-coverage/
-.git/
-.github/
-README.md
-docker-compose*.yml
-```
+Do **not** rely on `bootstrap_cluster_creator_admin_permissions` alone for portability (creation-time semantics vary). **Explicit access entries** are more reliable across destroy/recreate and shared labs.
 
-### 4. Runtime configuration
+#### Add-on ordering (avoid CoreDNS / CSI stuck states)
+
+| Order | Add-on | Dependency |
+|-------|--------|----------------|
+| Before node group | **`vpc-cni`** | Node group `depends_on` this add-on |
+| After node group | **`kube-proxy`**, **`coredns`**, **`aws-ebs-csi-driver`** | Each `depends_on` the node group |
+
+#### EBS CSI driver IAM (not the app IRSA role)
+
+- **`aws-ebs-csi-driver`** must use its **own** IRSA role trusted for  
+  `system:serviceaccount:kube-system:ebs-csi-controller-sa`
+- Attach **`arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy`**
+- Set `service_account_role_arn` on the `aws_eks_addon` named `aws-ebs-csi-driver` to that role
+- **Never** reuse the payment-api application IRSA role for the EBS CSI add-on (wrong trust and policies → add-on stuck in `CREATING` / timeout)
+
+#### OIDC for IRSA (required pattern)
+
+- EKS exposes an OIDC issuer URL; **IAM OIDC provider is not created automatically** for Terraform IRSA.
+- Use `data "tls_certificate" "eks_oidc"` against the cluster issuer URL and `resource "aws_iam_openid_connect_provider" "eks"` with `client_id_list = ["sts.amazonaws.com"]` and a valid `thumbprint_list`.
+- **Do not** use on
+
+### 2. Amazon ECR
 
 | Requirement | Detail |
 |-------------|--------|
-| `WORKDIR` | `/app` in **every** stage |
-| Port | **Expose 3000**; support overrides via **`ARG` / `ENV`** at build time |
-| Env defaults (final stage) | `NODE_ENV=production`, `PORT=3000` |
-| `CMD` | **Exec form** only: `CMD ["node", "dist/index.js"]` — **do not** use shell form for the final `CMD` |
+| Repository name | `payment-api` |
+| Tag mutability | **IMMUTABLE** |
+| Scanning | On push |
+| Lifecycle policy | Keep only the **last 10** tagged images; expire **untagged** images after **7** days |
 
-### 5. Health check (final stage)
+### 3. IAM (EKS node group → ECR)
 
-Add a **`HEALTHCHECK`** on the final image:
+- Create an IAM role for the EKS **node group**
+- Attach these managed policies to the **node** IAM role:
 
-| Option | Value |
-|--------|--------|
-| Interval | `30s` |
-| Timeout | `5s` |
-| Retries | `3` |
-| Start period | `10s` |
+  | Policy | Purpose |
+  |--------|---------|
+  | `AmazonEKSWorkerNodePolicy` | Node join and cluster communication |
+  | `AmazonEKS_CNI_Policy` | VPC CNI networking |
+  | `AmazonEC2ContainerRegistryReadOnly` | **ECR image pull** |
 
-Command (use **`wget`** — Alpine does not ship **`curl`** by default):
+- Create an **IAM OIDC provider** for the cluster (IRSA — IAM Roles for Service Accounts)
+- **Output** the ECR repository URI for CI/CD and image builds
 
-```dockerfile
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1
+---
+
+## Terraform structure
+
+Organize the code like this:
+
+```text
+terraform/
+├── main.tf              # Root module — wires child modules
+├── variables.tf         # Inputs and defaults
+├── outputs.tf           # Cluster endpoint, ECR URI, kubeconfig helper, etc.
+├── providers.tf         # AWS (+ Kubernetes provider if used)
+├── versions.tf          # Required Terraform and provider versions
+└── modules/
+    ├── vpc/             # VPC, subnets, IGW, NAT
+    ├── eks/             # EKS cluster, node group, add-ons, OIDC
+    └── ecr/             # ECR repo, lifecycle policy
 ```
 
 ---
 
-## Quick checklist for reviewers
+## Technical constraints
 
-- [ ] Three stages: `deps` → `builder` → `runner`
-- [ ] Final image has no TypeScript sources or devDependencies
-- [ ] Non-root user, exec-form `CMD`, production `NODE_ENV`
-- [ ] `.dockerignore` present and aligned with the list above
-- [ ] `HEALTHCHECK` hits `/health` on the configured port
+| Area | Requirement |
+|------|-------------|
+| Terraform | `>= 1.6` |
+| AWS provider | `~> 5.0` |
+| EKS module | Official **`terraform-aws-modules/eks/aws`** (**v20+**) |
+| VPC module | Official **`terraform-aws-modules/vpc/aws`** (**v5+**) |
+| Region | **`us-east-1`**, parameterized via variable |
+| State | **Local** backend for the demo (no remote backend required) |
+| Account / region | Use **`aws_caller_identity`** and **`aws_region`** data sources — **no hardcoded account IDs** |
+
+**Mandatory tags (all resources)**
+
+| Tag | Value |
+|-----|--------|
+| `Environment` | `demo` |
+| `Project` | `payment-api` |
+| `ManagedBy` | `terraform` |
+
+---
+
+## Outputs to include
+
+| Output | Description |
+|--------|-------------|
+| EKS cluster name | For `kubectl` / `aws eks` commands |
+| EKS cluster endpoint | API server URL |
+| EKS cluster certificate authority data | CA for kubeconfig |
+| `update-kubeconfig` helper | e.g. `aws eks update-kubeconfig --region <region> --name <cluster-name>` |
+| ECR repository URL | For the `payment-api` image pipeline |
+
+---
+
+## Additional notes
+
+- Add **comments** in Terraform explaining each major block
+- Security groups should follow **least privilege**
+- Nodes stay **without** public IPs; use **AL2023** AMI type (AL2 is deprecated for EKS **1.33+**)
+
+### README for `terraform/`
+
+Include a **`README.md`** with:
+
+1. **Prerequisites** — AWS CLI, `kubectl`, Terraform (versions aligned with `versions.tf`)
+2. **Deploy steps** — init, plan, apply, and any ordering notes
+3. **Push an image** — how to build/tag and push to the `payment-api` ECR repository
+4. **Connect `kubectl`** — use the cluster name, region, and `aws eks update-kubeconfig` output from Terraform
