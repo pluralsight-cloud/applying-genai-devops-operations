@@ -1,4 +1,4 @@
-# Module 2 — Demo 4: Build a Jenkins CI/CD pipeline for EKS (AI-assisted)
+# Module 2 — Demo 5: Build a Jenkins CI/CD pipeline for EKS (AI-assisted)
 
 Use the prompt below with your GenAI tool to generate a **complete, production-ready Jenkins Pipeline** using **Job DSL** for the **payment-api**. The pipeline builds a **Node.js 24** TypeScript API, pushes the Docker image to **AWS ECR**, and deploys to **AWS EKS** using existing Kubernetes manifests in the repo.
 

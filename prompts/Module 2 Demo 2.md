@@ -1,4 +1,4 @@
-# Module 1 — Demo 1: Build and validate EKS infrastructure (AI-generated Terraform)
+# Module 1 — Demo 2: Build and validate EKS infrastructure (AI-generated Terraform)
 
 Use the prompt below with your GenAI tool to produce a **complete, production-style Terraform** layout that provisions the AWS pieces for this course’s **demo environment**.
 
