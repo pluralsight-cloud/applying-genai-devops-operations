@@ -1,0 +1,18 @@
+# ConfigMap containing non-sensitive configuration for the payment-api
+# This is referenced in the Deployment via envFrom to inject environment variables
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: payment-api-config
+  namespace: payment-api
+  labels:
+    app.kubernetes.io/name: payment-api
+    app.kubernetes.io/managed-by: kustomize
+    environment: prod
+data:
+  # Node.js environment mode - production for optimized runtime
+  NODE_ENV: "production"
+  # Port the application listens on
+  PORT: "3000"
+  # Logging verbosity level - info for production monitoring
+  LOG_LEVEL: "info"

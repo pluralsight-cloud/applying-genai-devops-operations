@@ -1,0 +1,58 @@
+# HorizontalPodAutoscaler (HPA) for automatic scaling of the payment-api deployment
+# Scales based on CPU and memory utilization metrics
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: payment-api
+  namespace: payment-api
+  labels:
+    app: payment-api
+    app.kubernetes.io/name: payment-api
+    app.kubernetes.io/managed-by: kustomize
+    environment: prod
+spec:
+  # Reference to the scaled target (Deployment)
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: payment-api
+  # Minimum number of pods to run
+  minReplicas: 2
+  # Maximum number of pods to scale up to
+  maxReplicas: 5
+  # Metrics to scale based on
+  metrics:
+    # CPU utilization metric - scale when average CPU > 70%
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    # Memory utilization metric - scale when average memory > 80%
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+  # Behavior configuration for scaling
+  behavior:
+    # Scale down configuration
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 60
+    # Scale up configuration
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+        - type: Pods
+          value: 4
+          periodSeconds: 15
+      selectPolicy: Max

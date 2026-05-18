@@ -1,0 +1,20 @@
+# PodDisruptionBudget (PDB) for the payment-api deployment
+# Ensures availability during voluntary disruptions (node drains, upgrades, etc.)
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: payment-api
+  namespace: payment-api
+  labels:
+    app: payment-api
+    app.kubernetes.io/name: payment-api
+    app.kubernetes.io/managed-by: kustomize
+    environment: prod
+spec:
+  # Minimum number of pods that must remain available during disruptions
+  minAvailable: 1
+  # Selector matches pods protected by this PDB
+  selector:
+    matchLabels:
+      app: payment-api
+      app.kubernetes.io/name: payment-api

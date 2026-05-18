@@ -1,0 +1,116 @@
+# Deployment for the payment-api application
+# Manages the desired state of pods running the Node.js payment API
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-api
+  namespace: payment-api
+  labels:
+    app: payment-api
+    app.kubernetes.io/name: payment-api
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/managed-by: kustomize
+    environment: prod
+spec:
+  # Number of desired replicas (pods)
+  replicas: 2
+  # Selector defines which pods belong to this deployment
+  selector:
+    matchLabels:
+      app: payment-api
+      app.kubernetes.io/name: payment-api
+  # Template defines the pod specification
+  template:
+    metadata:
+      labels:
+        app: payment-api
+        app.kubernetes.io/name: payment-api
+        app.kubernetes.io/version: "1.0.0"
+        app.kubernetes.io/managed-by: kustomize
+        environment: prod
+    spec:
+      # Restart policy for containers in the pod
+      restartPolicy: Always
+      
+      # Security context at pod level
+      # Run as non-root user for security
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      
+      # Topology spread constraints to distribute pods across availability zones
+      # Improves high availability by spreading pods across zones
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: payment-api
+      
+      # Container definition
+      containers:
+        - name: payment-api
+          # ECR image - replace <account-id> and <region> with actual values
+          image: 337748711987.dkr.ecr.us-east-1.amazonaws.com/payment-api:latest
+          imagePullPolicy: Always
+          
+          # Container port
+          ports:
+            - containerPort: 3000
+              protocol: TCP
+          
+          # Environment variables from ConfigMap
+          envFrom:
+            - configMapRef:
+                name: payment-api-config
+          
+          # Resource requests and limits
+          # Requests: minimum guaranteed resources
+          # Limits: maximum resources the container can use
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          
+          # Liveness probe - determines if container is alive
+          # Kubernetes will restart the container if this fails
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          
+          # Readiness probe - determines if container is ready to receive traffic
+          # Pods are only added to service endpoints when this succeeds
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          
+          # Security context at container level
+          securityContext:
+            # Prevent privilege escalation
+            allowPrivilegeEscalation: false
+            # Read-only root filesystem for immutability
+            readOnlyRootFilesystem: true
+            # Drop all Linux capabilities for minimal permissions
+            capabilities:
+              drop:
+                - ALL
+      
+      # Image pull secrets for private ECR registry
+      # Uncomment and configure if ECR requires authentication
+      # imagePullSecrets:
+      #   - name: ecr-pull-secret

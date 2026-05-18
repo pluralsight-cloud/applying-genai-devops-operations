@@ -1,0 +1,38 @@
+# Service exposing the payment-api deployment
+# Type LoadBalancer provisions an AWS Elastic Load Balancer
+# This is the only external entrypoint - no Ingress is used
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-api
+  namespace: payment-api
+  labels:
+    app: payment-api
+    app.kubernetes.io/name: payment-api
+    app.kubernetes.io/managed-by: kustomize
+    environment: prod
+  # Annotations for AWS LoadBalancer configuration
+  annotations:
+    # Service type - AWS will provision a public Application Load Balancer
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    # LoadBalancer name tag for identification in AWS console
+    service.beta.kubernetes.io/aws-load-balancer-name: "payment-api-lb"
+    # Health check interval (seconds)
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-interval: "10"
+    # Health check timeout (seconds)
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-timeout: "5"
+    # Number of failed health checks before marking unhealthy
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-healthy-threshold: "2"
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-unhealthy-threshold: "2"
+spec:
+  # Service type - provisions external load balancer
+  type: LoadBalancer
+  # Service ports configuration
+  ports:
+    - port: 80
+      targetPort: 3000
+      protocol: TCP
+      name: http
+  # Selector matches pods to route traffic to
+  selector:
+    app: payment-api
