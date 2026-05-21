@@ -309,6 +309,112 @@ The Jenkins IAM user needs at minimum:
 - EKS: `eks:DescribeCluster` (if you ever use `aws eks update-kubeconfig`)
 - Kubernetes API access via the cluster’s `aws-auth` / EKS access entries (for `kubectl`)
 
+### Creating the `eks-kubeconfig` credential file
+
+Generate the kubeconfig **outside Jenkins** (on your laptop or a bootstrap host) using the **same IAM user** you will store as `aws-credentials`. The pipeline does not run `aws eks update-kubeconfig`; it copies this file from Jenkins credentials.
+
+```bash
+export AWS_REGION=us-east-1
+export EKS_CLUSTER_NAME=demo-eks-cluster
+
+# Write a dedicated kubeconfig file (do not commit — add to .gitignore)
+aws eks update-kubeconfig \
+  --region "${AWS_REGION}" \
+  --name "${EKS_CLUSTER_NAME}" \
+  --kubeconfig eks-kubeconfig.yaml
+
+# Verify cluster access (EKS exec auth still needs AWS credentials)
+export KUBECONFIG="$(pwd)/eks-kubeconfig.yaml"
+export AWS_DEFAULT_REGION="${AWS_REGION}"
+kubectl cluster-info
+kubectl get nodes
+```
+
+Upload the file to Jenkins:
+
+1. **Manage Jenkins** → **Credentials** → **(global)** → **Add Credentials**
+2. Kind: **Secret file**
+3. **ID:** `eks-kubeconfig` (must match the pipeline)
+4. **File:** select `eks-kubeconfig.yaml`
+5. Save
+
+Optional — confirm the Jenkins IAM user can reach the API before uploading:
+
+```bash
+export AWS_ACCESS_KEY_ID="<jenkins-user-access-key>"
+export AWS_SECRET_ACCESS_KEY="<jenkins-user-secret-key>"
+export AWS_DEFAULT_REGION=us-east-1
+export KUBECONFIG="$(pwd)/eks-kubeconfig.yaml"
+kubectl auth can-i get pods -n payment-api
+```
+
+### Creating the `github-token` credential
+
+Jenkins needs a **Username with password** credential so the pipeline and seed job can clone the Git repo over HTTPS (private repos) or avoid anonymous rate limits. Use a **GitHub Personal Access Token (PAT)** as the password — not your GitHub account password.
+
+#### 1. Create a PAT on GitHub
+
+**Classic token (simplest for demos):**
+
+1. GitHub → **Settings** → **Developer settings** → **Personal access tokens** → **Tokens (classic)** → **Generate new token (classic)**
+2. Note: e.g. `jenkins-payment-api`
+3. Expiration: choose a policy for your environment (90 days, or no expiration for lab VMs only)
+4. Scopes — enable at minimum:
+   - **`repo`** — clone/fetch private repositories and read commit metadata
+5. Generate and **copy the token** (shown once)
+
+**Fine-grained token (alternative):**
+
+1. **Developer settings** → **Personal access tokens** → **Fine-grained tokens** → **Generate new token**
+2. Repository access: **Only select repositories** → choose the `payment-api` repo
+3. Permissions → **Repository permissions:**
+   - **Contents:** Read-only
+   - **Metadata:** Read-only (required)
+4. Generate and copy the token
+
+#### 2. Add the credential in Jenkins
+
+1. **Manage Jenkins** → **Credentials** → **(global)** → **Add Credentials**
+2. Kind: **Username with password**
+3. **Scope:** Global
+4. **ID:** `github-token` (must match Job DSL / pipeline `credentialsId`)
+5. **Username:** your GitHub username (e.g. `myuser`) — not the token string
+6. **Password:** paste the PAT
+7. Save
+
+#### 3. Use in Job DSL (`seed.groovy`)
+
+Reference the credential on the pipeline job SCM block:
+
+```groovy
+cpsScm {
+    scm {
+        git {
+            remote {
+                url('https://github.com/<org>/payment-api.git')
+                credentials('github-token')
+            }
+            branch('*/main')
+        }
+    }
+    scriptPath('jenkins/Jenkinsfile')
+}
+```
+
+Replace `<org>/payment-api` with your repository path.
+
+#### 4. Verify clone access (optional)
+
+```bash
+export GITHUB_USER="<your-github-username>"
+export GITHUB_TOKEN="<paste-pat-here>"
+git ls-remote "https://${GITHUB_USER}:${GITHUB_TOKEN}@github.com/<org>/payment-api.git" HEAD
+```
+
+A successful command prints the `HEAD` commit SHA. Clear the token from your shell history afterward.
+
+**Note:** GitHub **webhooks** (push to `main`) are configured separately on the repo (**Settings** → **Webhooks** → Jenkins URL). They do not use the `github-token` credential; the token is for **git clone/fetch** from Jenkins.
+
 ---
 
 ## Critical implementation notes (read before generating code)
@@ -427,7 +533,9 @@ Include the following sections:
 ### 2. First-time setup
 
 - How to run the seed job to generate the pipeline
-- How to configure credentials in Jenkins (`aws-credentials`, `eks-kubeconfig`, `ecr-account-id`)
+- How to configure credentials in Jenkins (`aws-credentials`, `eks-kubeconfig`, `ecr-account-id`, `github-token`)
+- How to create `eks-kubeconfig.yaml` with `aws eks update-kubeconfig` and upload it as the **Secret file** credential `eks-kubeconfig` (see **Creating the `eks-kubeconfig` credential file** above)
+- How to create a GitHub PAT and add it as **Username with password** credential `github-token` (see **Creating the `github-token` credential** above)
 - Add `jenkins` user to the `docker` group on the agent
 - How to configure the GitHub webhook
 
@@ -455,3 +563,6 @@ ASCII art showing all stages end to end.
 | `Unable to locate credentials` on `kubectl` | Missing `aws-credentials` in stage | Add `withCredentials` + `AWS_DEFAULT_REGION` |
 | `cp: Permission denied` on `.kubeconfig` | Re-copying kubeconfig after kubectl | Copy once in Configure kubeconfig only |
 | `Expected a step` at `try {` | `try/catch` outside `script {}` in `post {}` | Wrap in `script { }` |
+| `Unable to connect to the server` / invalid kubeconfig | Missing or stale `eks-kubeconfig` credential | Regenerate with `aws eks update-kubeconfig --kubeconfig eks-kubeconfig.yaml` and re-upload to Jenkins |
+| `Authentication failed` / `403` on git checkout | Missing, expired, or wrong `github-token` | Create a new PAT with `repo` (classic) or Contents read (fine-grained); username = GitHub user, password = PAT |
+| `Could not find credentials entry with ID 'github-token'` | Credential not created or wrong ID | Add Jenkins credential with exact ID `github-token` |
