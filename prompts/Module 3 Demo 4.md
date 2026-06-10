@@ -14,10 +14,10 @@ SLACK CONFIGURATION
 -------------------
 - Slack workspace: [SLACK_WORKSPACE_NAME]
 - Critical alerts channel: #payments-critical
-- Warning alerts channel:  #payments-warnings
-- Info alerts channel:     #payments-info
-- Slack webhook URL:       [SLACK_WEBHOOK_URL] (store as a Kubernetes Secret)
-- Slack bot token:         [SLACK_BOT_TOKEN]   (store as a Kubernetes Secret)
+- Warning alerts channel: #payments-warnings
+- Info alerts channel: #payments-info
+- Slack webhook URL: [SLACK_WEBHOOK_URL] (store as a Kubernetes Secret)
+- Slack bot token: [SLACK_BOT_TOKEN] (store as a Kubernetes Secret)
 
 CONTEXT — FILES TO REVIEW
 --------------------------
@@ -45,9 +45,9 @@ From Prometheus (confirm these metrics exist before writing expressions):
 
 SLO TARGETS
 -----------
-  - Availability:  99.9%  (error budget: ~43 min/month)
-  - P99 latency:   ≤ 500ms
-  - Error rate:    ≤ 0.1%
+- Availability: 99.9% (error budget: ~43 min/month)
+- P99 latency: ≤ 500ms
+- Error rate: ≤ 0.1%
 
 TASK
 ----
@@ -64,149 +64,135 @@ For every alert include:
   - description annotation (include the current metric value using {{ $value }})
   - runbook_url annotation (use https://wiki.globalmatics.internal/runbooks/[ALERT_NAME])
 
-─────────────────────────────────────────────
-GROUP 1 — Availability
-─────────────────────────────────────────────
-PaymentAPIDown
-  - Condition: zero healthy payment API pods for > 1 min
-  - Severity: critical → routes to #payments-critical
-  - Hint: use kube_deployment_status_replicas_available
+1. GROUP — Availability
+   PaymentAPIDown
+     - Condition: zero healthy payment API pods for > 1 min
+     - Severity: critical → routes to #payments-critical
+     - Hint: use kube_deployment_status_replicas_available
 
-PaymentAPIReplicasMismatch
-  - Condition: available replicas < desired replicas for > 3 min
-  - Severity: warning → routes to #payments-warnings
-  - Hint: compare kube_deployment_spec_replicas vs kube_deployment_status_replicas_available
+   PaymentAPIReplicasMismatch
+     - Condition: available replicas < desired replicas for > 3 min
+     - Severity: warning → routes to #payments-warnings
+     - Hint: compare kube_deployment_spec_replicas vs kube_deployment_status_replicas_available
 
-PaymentAPICrashLooping
-  - Condition: pod restart count increases by > 3 in a 15-min window
-  - Severity: critical → routes to #payments-critical
-  - Hint: use rate() over kube_pod_container_status_restarts_total
+   PaymentAPICrashLooping
+     - Condition: pod restart count increases by > 3 in a 15-min window
+     - Severity: critical → routes to #payments-critical
+     - Hint: use rate() over kube_pod_container_status_restarts_total
 
-─────────────────────────────────────────────
-GROUP 2 — Error rate (multi-severity)
-─────────────────────────────────────────────
-PaymentAPIHighErrorRate
-  - Condition: HTTP 5xx rate > 1% of total requests over 5-min window
-  - Severity: warning → routes to #payments-warnings
-  - for: 5m
+2. GROUP — Error rate (multi-severity)
+   PaymentAPIHighErrorRate
+     - Condition: HTTP 5xx rate > 1% of total requests over 5-min window
+     - Severity: warning → routes to #payments-warnings
+     - for: 5m
 
-PaymentAPICriticalErrorRate
-  - Condition: HTTP 5xx rate > 5% of total requests over 2-min window
-  - Severity: critical → routes to #payments-critical
-  - for: 2m
+   PaymentAPICriticalErrorRate
+     - Condition: HTTP 5xx rate > 5% of total requests over 2-min window
+     - Severity: critical → routes to #payments-critical
+     - for: 2m
 
-PaymentAPIHighClientErrorRate
-  - Condition: HTTP 4xx rate > 10% of total requests over 10-min window
-  - Severity: warning → routes to #payments-warnings
-  - Hint: exclude 404s if they represent expected "not found" responses
+   PaymentAPIHighClientErrorRate
+     - Condition: HTTP 4xx rate > 10% of total requests over 10-min window
+     - Severity: warning → routes to #payments-warnings
+     - Hint: exclude 404s if they represent expected "not found" responses
 
-─────────────────────────────────────────────
-GROUP 3 — Latency (multi-severity)
-─────────────────────────────────────────────
-PaymentAPIHighLatency
-  - Condition: P99 latency > 500ms sustained for 5 min
-  - Severity: warning → routes to #payments-warnings
-  - Hint: use histogram_quantile(0.99, ...) over http_request_duration_seconds
+3. GROUP — Latency (multi-severity)
+   PaymentAPIHighLatency
+     - Condition: P99 latency > 500ms sustained for 5 min
+     - Severity: warning → routes to #payments-warnings
+     - Hint: use histogram_quantile(0.99, ...) over http_request_duration_seconds
 
-PaymentAPICriticalLatency
-  - Condition: P99 latency > 1,000ms sustained for 3 min
-  - Severity: critical → routes to #payments-critical
+   PaymentAPICriticalLatency
+     - Condition: P99 latency > 1,000ms sustained for 3 min
+     - Severity: critical → routes to #payments-critical
 
-PaymentAPIElevatedP95Latency
-  - Condition: P95 latency > 300ms sustained for 10 min
-  - Severity: info → routes to #payments-info
+   PaymentAPIElevatedP95Latency
+     - Condition: P95 latency > 300ms sustained for 10 min
+     - Severity: info → routes to #payments-info
 
-─────────────────────────────────────────────
-GROUP 4 — Payment business metrics
-─────────────────────────────────────────────
-PaymentAPIHighFailureRate
-  - Condition: payment transaction failure rate > 2% over a 5-min window
-  - Severity: critical → routes to #payments-critical
-  - Hint: rate(payment_transactions_total{status="failure"}) /
-          rate(payment_transactions_total)
+4. GROUP — Payment business metrics
+   PaymentAPIHighFailureRate
+     - Condition: payment transaction failure rate > 2% over a 5-min window
+     - Severity: critical → routes to #payments-critical
+     - Hint: rate(payment_transactions_total{status="failure"}) /
+             rate(payment_transactions_total)
 
-PaymentAPINoSuccessfulTransactions
-  - Condition: zero successful payment transactions in any 10-min window
-  - Severity: critical → routes to #payments-critical
-  - Note: this is a dead man's switch — silence means something is wrong
+   PaymentAPINoSuccessfulTransactions
+     - Condition: zero successful payment transactions in any 10-min window
+     - Severity: critical → routes to #payments-critical
+     - Note: this is a dead man's switch — silence means something is wrong
 
-PaymentAPITransactionSpikeAnomaly
-  - Condition: failure rate > 3× the 1-hour rolling average
-  - Severity: warning → routes to #payments-warnings
-  - Hint: compare a short rate() window against a longer rate() window
+   PaymentAPITransactionSpikeAnomaly
+     - Condition: failure rate > 3× the 1-hour rolling average
+     - Severity: warning → routes to #payments-warnings
+     - Hint: compare a short rate() window against a longer rate() window
 
-─────────────────────────────────────────────
-GROUP 5 — Database connection pool
-─────────────────────────────────────────────
-PaymentAPIDBConnectionPoolHigh
-  - Condition: active connections > 80% of max pool size sustained for 5 min
-  - Severity: warning → routes to #payments-warnings
-  - Hint: db_connection_pool_active / db_connection_pool_max
+5. GROUP — Database connection pool
+   PaymentAPIDBConnectionPoolHigh
+     - Condition: active connections > 80% of max pool size sustained for 5 min
+     - Severity: warning → routes to #payments-warnings
+     - Hint: db_connection_pool_active / db_connection_pool_max
 
-PaymentAPIDBConnectionPoolExhausted
-  - Condition: active connections >= max pool size for > 2 min
-  - Severity: critical → routes to #payments-critical
+   PaymentAPIDBConnectionPoolExhausted
+     - Condition: active connections >= max pool size for > 2 min
+     - Severity: critical → routes to #payments-critical
 
-─────────────────────────────────────────────
-GROUP 6 — SLO burn rate (multi-window)
-─────────────────────────────────────────────
-Generate a multi-window, multi-burn-rate SLO alert set for a 99.9%
-availability target using the error rate as the SLI.
+6. GROUP — SLO burn rate (multi-window)
+   Generate a multi-window, multi-burn-rate SLO alert set for a 99.9%
+   availability target using the error rate as the SLI.
 
-  Fast burn (page immediately):
-    - 14× burn rate over both 1h and 5m windows
-    - Severity: critical → routes to #payments-critical
-    - for: 2m
+   Fast burn (page immediately):
+     - 14× burn rate over both 1h and 5m windows
+     - Severity: critical → routes to #payments-critical
+     - for: 2m
 
-  Slow burn (create a ticket):
-    - 3× burn rate over both 6h and 30m windows
-    - Severity: warning → routes to #payments-warnings
-    - for: 15m
+   Slow burn (create a ticket):
+     - 3× burn rate over both 6h and 30m windows
+     - Severity: warning → routes to #payments-warnings
+     - for: 15m
 
-  Include a comment in the YAML explaining how the burn rate multipliers
-  relate to the monthly error budget.
+   Include a comment in the YAML explaining how the burn rate multipliers
+   relate to the monthly error budget.
 
-─────────────────────────────────────────────
 ALERTMANAGER CONFIGURATION
-─────────────────────────────────────────────
+--------------------------
 Generate a complete Alertmanager configuration that:
 
-ROUTING
-  - Routes severity=critical alerts to #payments-critical
-    * group_wait: 0s (page immediately)
-    * group_interval: 5m
-    * repeat_interval: 1h
-  - Routes severity=warning alerts to #payments-warnings
-    * group_wait: 5m
-    * group_interval: 10m
-    * repeat_interval: 4h
-  - Routes severity=info alerts to #payments-info
-    * group_wait: 10m
-    * group_interval: 30m
-    * repeat_interval: 12h
-  - Group alerts by: alertname, namespace, severity
+1. ROUTING
+   - Routes severity=critical alerts to #payments-critical
+       * group_wait: 0s (page immediately)
+       * group_interval: 5m
+       * repeat_interval: 1h
+   - Routes severity=warning alerts to #payments-warnings
+       * group_wait: 5m
+       * group_interval: 10m
+       * repeat_interval: 4h
+   - Routes severity=info alerts to #payments-info
+       * group_wait: 10m
+       * group_interval: 30m
+       * repeat_interval: 12h
+   - Group alerts by: alertname, namespace, severity
 
-SLACK MESSAGE FORMAT
-  For each severity, customise the Slack message template to include:
-  - Alert name and severity as the message title
-  - Emoji indicator:  🔴 critical  |  🟡 warning  |  🔵 info
-  - Description annotation value
-  - Current metric value ({{ $value }})
-  - Runbook URL as a clickable link
-  - Cluster name and namespace
-  - A "View in Grafana" link (use [GRAFANA_URL] as placeholder)
-  - Firing vs resolved state — show a distinct resolved message with ✅
+2. SLACK MESSAGE FORMAT
+   For each severity, customise the Slack message template to include:
+   - Alert name and severity as the message title
+   - Emoji indicator: 🔴 critical | 🟡 warning | 🔵 info
+   - Description annotation value
+   - Current metric value ({{ $value }})
+   - Runbook URL as a clickable link
+   - Cluster name and namespace
+   - A "View in Grafana" link (use [GRAFANA_URL] as placeholder)
+   - Firing vs resolved state — show a distinct resolved message with ✅
 
-INHIBITION RULES
-  - Suppress warning alerts when a critical alert is firing for the same
-    payment API pod
-  - Suppress latency and error alerts when PaymentAPIDown is active
-  - Suppress all alerts during a maintenance window label:
-    alertname="MaintenanceWindow"
+3. INHIBITION RULES
+   - Suppress warning alerts when a critical alert is firing for the same
+     payment API pod
+   - Suppress latency and error alerts when PaymentAPIDown is active
+   - Suppress all alerts during a maintenance window label:
+     alertname="MaintenanceWindow"
 
-─────────────────────────────────────────────
 OUTPUT FORMAT
-─────────────────────────────────────────────
+-------------
 Provide the following in order:
 
 a) prometheusrule.yaml
