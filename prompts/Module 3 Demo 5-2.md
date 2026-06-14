@@ -111,3 +111,4 @@ Analyze the logs above and produce a complete diagnostic report.
    - The recommended threshold and severity level
 
 Present findings in order of severity, most critical
+Save the results to a md file in a directory called analysis 
