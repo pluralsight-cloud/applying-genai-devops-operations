@@ -127,17 +127,7 @@ For every alert include:
      - Severity: warning → routes to #payments-warnings
      - Hint: compare a short rate() window against a longer rate() window
 
-5. GROUP — Database connection pool
-   PaymentAPIDBConnectionPoolHigh
-     - Condition: active connections > 80% of max pool size sustained for 5 min
-     - Severity: warning → routes to #payments-warnings
-     - Hint: db_connection_pool_active / db_connection_pool_max
-
-   PaymentAPIDBConnectionPoolExhausted
-     - Condition: active connections >= max pool size for > 2 min
-     - Severity: critical → routes to #payments-critical
-
-6. GROUP — SLO burn rate (multi-window)
+5. GROUP — SLO burn rate (multi-window)
    Generate a multi-window, multi-burn-rate SLO alert set for a 99.9%
    availability target using the error rate as the SLI.
 
