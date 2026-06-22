@@ -12,7 +12,7 @@ ENVIRONMENT
 
 TERRAFORM FILES
 ---------------
-[PASTE YOUR TERRAFORM FILES HERE]
+Terraform files are located in the terraform directory.
 Include: main.tf, variables.tf, outputs.tf, and any module files
 covering EKS, EC2, VPC, EBS, and ECR resources.
 
