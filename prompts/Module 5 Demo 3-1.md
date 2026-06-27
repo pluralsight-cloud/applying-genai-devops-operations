@@ -174,3 +174,5 @@ Output this section as a JSON block for use in the next prompt:
 
 - Use `[INSUFFICIENT DATA]` where a file does not contain enough data points to compute a reliable value.
 - Anchor every observation to specific timestamps from the data.
+- Output results to an MD file in the metrics directory.
+- Save data in a file called capacity-analysis.md in the metrics directory.

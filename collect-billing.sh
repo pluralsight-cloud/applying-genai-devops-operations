@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # ── Configuration ─────────────────────────────────────────
-CLUSTER_NAME="payment-api-cluster"
-NODEGROUP_NAME="payment-api-nodegroup"
+CLUSTER_NAME="[YOUR_CLUSTER_NAME]"
+NODEGROUP_NAME="[YOUR_NODEGROUP_NAME]"
 ASG_NAME="[YOUR_ASG_NAME]"
 ECR_REPO_NAME="payment-api"
 BILLING_DIR="./billing"

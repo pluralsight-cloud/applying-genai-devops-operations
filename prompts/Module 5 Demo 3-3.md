@@ -3,8 +3,8 @@ Kubernetes HPA manifest for the Globalmatics payment API.
 
 INPUTS
 ------
-FORECAST SUMMARY (paste the JSON output from Prompt 2):
-[PASTE FORECAST SUMMARY JSON HERE]
+FORECAST SUMMARY:
+Use traffic-forecast.md in the metrics directory.
 
 DEPLOYMENT CONTEXT
 ------------------

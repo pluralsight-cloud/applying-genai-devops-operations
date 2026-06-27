@@ -12,11 +12,8 @@ You are a capacity planning engineer generating a traffic growth forecast for th
 
 ## Inputs
 
-**Capacity model** (paste the JSON output from Part 1):
-
-```text
-[PASTE CAPACITY MODEL SUMMARY JSON HERE]
-```
+**Capacity model**:
+Use the capacity-analysis.md file in the metrics directory.
 
 **Growth assumptions** — provide these values before running the prompt:
 
@@ -143,3 +140,5 @@ Output this section as a JSON block:
   }
 }
 ```
+
+Save the forcast summary to traffic-forecast.md in the metrics directory.
